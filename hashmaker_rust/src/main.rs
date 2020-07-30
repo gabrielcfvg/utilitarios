@@ -40,6 +40,13 @@ fn main(){
                                 .value_name("SAIDA")
                                 .help("Utiliza o arquivo passado como saida padrão")
                                 .takes_value(true))
+                            .arg(Arg::with_name("memoria")
+                                .short("m")
+                                .long("memoria")
+                                .value_name("MEMORIA")
+                                .help("memoria máxima a ser utilizada pelo programa")
+                                .default_value("268435456")
+                                .takes_value(true))
                                 
                             .get_matches();
 
@@ -51,53 +58,69 @@ fn main(){
         exit(1);
     }
 
-    let mut Arquivo = File::with_options().read(true).open(variaveis.value_of("arquivo").unwrap()).unwrap();
-    let mut tmp2 = vec![0; std::fs::metadata(variaveis.value_of("arquivo").unwrap()).unwrap().len() as usize];
-    Arquivo.read(&mut tmp2).unwrap();
-
-    let resultado: String = match variaveis.value_of("algoritmo").unwrap() {
+    let mut hasher: Box<dyn Digest> = match variaveis.value_of("algoritmo").unwrap() {
 
         "sha256" => {
-            let mut hasher = Sha256::new();
-            hasher.input(&tmp2);
-            hasher.result_str()
+            Box::new(Sha256::new())
         }
 
         "sha512" => {
-            let mut hasher = Sha512::new();
-            hasher.input(&tmp2);
-            hasher.result_str()
+            Box::new(Sha512::new())
         }
         
         "sha224" => {
-            let mut hasher = Sha224::new();
-            hasher.input(&tmp2);
-            hasher.result_str()
+            Box::new(Sha224::new())
         }
 
         "sha384" => {
-            let mut hasher = Sha384::new();
-            hasher.input(&tmp2);
-            hasher.result_str()
+            Box::new(Sha384::new())
         }
 
         "md5" => {
-            let mut hasher = Md5::new();
-            hasher.input(&tmp2);
-            hasher.result_str()
-        }
+            Box::new(Md5::new())
 
+        }
         _ => {
             println!("Algoritmo não suportado");
             exit(1);
         }
     };
 
+
+    let max_mem: usize = variaveis.value_of("memoria").unwrap().parse().unwrap();
+    let mut arquivo = File::with_options().read(true).open(variaveis.value_of("arquivo").unwrap()).unwrap();
+    let mut file_len: usize = arquivo.metadata().unwrap().len() as usize;
+    
+    file_len = if file_len < max_mem {
+                    file_len
+                }
+                else {
+                    max_mem
+                };
+
+    let mut mem = vec![0u8; file_len];
+    
+    loop {
+        let n = arquivo.read(&mut mem).unwrap();
+        if n == 0 {
+            break
+        }
+        else if n < file_len {
+            mem.truncate(n);
+        }
+
+        hasher.input(&mem);
+        mem.clear();
+        mem.resize(file_len, 0)
+    }
+
+    drop(mem);
+
     if variaveis.is_present("saida") {
         let mut saida = File::create(variaveis.value_of("saida").unwrap()).expect("erro ao criar arquivo de saida");
-        saida.write_all(resultado.as_bytes()).unwrap();
+        saida.write_all(hasher.result_str().as_bytes()).unwrap();
     }
     else {
-        println!("resultado: {}", resultado)
+        println!("resultado: {}", hasher.result_str());
     }
 }
